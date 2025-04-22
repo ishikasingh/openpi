@@ -21,13 +21,13 @@ import tqdm_loggable.auto as tqdm
 from types_boto3_s3.service_resource import ObjectSummary
 
 # Environment variable to control cache directory path, ~/.cache/openpi will be used by default.
-_OPENPI_DATA_HOME = "OPENPI_DATA_HOME"
+_OPENPI_DATA_HOME = "/lustre/fsw/portfolios/nvr/users/ishikas/openpi"
 
 logger = logging.getLogger(__name__)
 
 
 def get_cache_dir() -> pathlib.Path:
-    default_dir = "~/.cache/openpi"
+    default_dir = "/lustre/fsw/portfolios/nvr/users/ishikas/openpi/.cache/openpi"
     if os.path.exists("/mnt/weka"):  # noqa: PTH110
         default_dir = f"/mnt/weka/{getpass.getuser()}/.cache/openpi"
 
@@ -64,6 +64,7 @@ def maybe_download(url: str, *, force_download: bool = False, **kwargs) -> pathl
         return path.resolve()
 
     cache_dir = get_cache_dir()
+    print(f"cache_dir: {cache_dir}")
 
     local_path = cache_dir / parsed.netloc / parsed.path.strip("/")
     local_path = local_path.resolve()
