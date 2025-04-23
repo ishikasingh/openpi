@@ -272,7 +272,7 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
                 _transforms.RepackTransform(
                     {
                         "observation/image": "image",
-                        "observation/wrist_image": "wrist_image",
+                        # "observation/wrist_image": "wrist_image",
                         "observation/state": "state",
                         "actions": "actions",
                         "prompt": "prompt",
@@ -358,7 +358,7 @@ class TrainConfig:
     # Random seed that will be used by random generators during training.
     seed: int = 42
     # Global batch size.
-    batch_size: int = 32
+    batch_size: int = 12
     # Number of workers to use for the data loader. Increasing this number will speed up data loading but
     # will increase memory and CPU usage.
     num_workers: int = 2
@@ -542,7 +542,7 @@ _CONFIGS = [
         # you see many warnings being thrown during training.
         model=pi0_fast.Pi0FASTConfig(action_dim=7, action_horizon=10, max_token_len=180),
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
+            repo_id="ishika/realworld_franka",
             base_config=DataConfig(
                 local_files_only=False,  # Set to True for local-only datasets.
                 prompt_from_task=True,

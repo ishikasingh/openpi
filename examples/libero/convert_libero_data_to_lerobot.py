@@ -22,10 +22,15 @@ import shutil
 
 from lerobot.common.datasets.lerobot_dataset import LEROBOT_HOME
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-import tensorflow_datasets as tfds
+# import tensorflow_datasets as tfds
 import tyro
+import os
+import pickle
+from tqdm import tqdm
+import pdb
+import numpy as np
 
-REPO_NAME = "your_hf_username/libero"  # Name of the output dataset, also used for the Hugging Face Hub
+REPO_NAME = "ishika/realworld_franka"  # Name of the output dataset, also used for the Hugging Face Hub
 RAW_DATASET_NAMES = [
     "libero_10_no_noops",
     "libero_goal_no_noops",
@@ -34,7 +39,7 @@ RAW_DATASET_NAMES = [
 ]  # For simplicity we will combine multiple Libero datasets into one training dataset
 
 
-def main(data_dir: str, *, push_to_hub: bool = False):
+def main(data_dir: str, *, push_to_hub: bool = True):
     # Clean up any existing dataset in the output directory
     output_path = LEROBOT_HOME / REPO_NAME
     if output_path.exists():
@@ -53,14 +58,14 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                 "shape": (256, 256, 3),
                 "names": ["height", "width", "channel"],
             },
-            "wrist_image": {
-                "dtype": "image",
-                "shape": (256, 256, 3),
-                "names": ["height", "width", "channel"],
-            },
+            # "wrist_image": {
+            #     "dtype": "image",
+            #     "shape": (256, 256, 3),
+            #     "names": ["height", "width", "channel"],
+            # },
             "state": {
                 "dtype": "float32",
-                "shape": (8,),
+                "shape": (7,),
                 "names": ["state"],
             },
             "actions": {
@@ -75,19 +80,41 @@ def main(data_dir: str, *, push_to_hub: bool = False):
 
     # Loop over raw Libero datasets and write episodes to the LeRobot dataset
     # You can modify this for your own data format
-    for raw_dataset_name in RAW_DATASET_NAMES:
-        raw_dataset = tfds.load(raw_dataset_name, data_dir=data_dir, split="train")
-        for episode in raw_dataset:
-            for step in episode["steps"].as_numpy_iterator():
-                dataset.add_frame(
-                    {
-                        "image": step["observation"]["image"],
-                        "wrist_image": step["observation"]["wrist_image"],
-                        "state": step["observation"]["state"],
-                        "actions": step["action"],
-                    }
-                )
-            dataset.save_episode(task=step["language_instruction"].decode())
+
+    # data_dir = '/lustre/fsw/portfolios/nvr/users/ishikas/xvila-robotics/realworld_data/train_final'
+    files = os.listdir(data_dir)
+    files.sort(key=lambda x: int(''.join(filter(str.isdigit, x)) or 0))
+    print('processing files: ', files[0:5], ' .... ', files[-5:-1])
+
+    for fidx in tqdm(range(len(files))): #[:50]):
+        if files[fidx].endswith('.pkl'):
+            with open(os.path.join(data_dir, files[fidx]), 'rb') as f:
+                raw_data = pickle.load(f)
+            timestep = 0
+            print([raw_data[i]['gripper_state'] for i in range(len(raw_data))])
+            for i, keypoint in enumerate(raw_data[1:]):
+                # pdb.set_trace()
+                print(len(keypoint['images']))
+
+                # Calculate downsampling indices to match joint_traj length
+                num_images = len(keypoint['images'])
+                num_joints = len(keypoint['joint_traj'])
+                if num_images > num_joints:
+                    # Use linear spacing to get indices that match joint_traj length
+                    sample_indices = np.linspace(0, num_images-1, num_joints, dtype=int)
+                    keypoint['images'] = [keypoint['images'][i] for i in sample_indices]
+
+                for idx in range(0, len(keypoint['joint_traj'])-1):
+                    dataset.add_frame(
+                        {
+                            "image": keypoint['images'][idx]['color'][..., ::-1],
+                            # "wrist_image": step["observation"]["wrist_image"],
+                            "state": keypoint['joint_traj'][idx],
+                            "actions": keypoint['joint_traj'][idx+1],
+                        }
+                    )
+            language_instruction = files[fidx].split('_trajectory')[0]
+            dataset.save_episode(task=language_instruction)
 
     # Consolidate the dataset, skip computing stats since we will do that later
     dataset.consolidate(run_compute_stats=False)
@@ -95,7 +122,7 @@ def main(data_dir: str, *, push_to_hub: bool = False):
     # Optionally push to the Hugging Face Hub
     if push_to_hub:
         dataset.push_to_hub(
-            tags=["libero", "panda", "rlds"],
+            tags=["realworld", "panda"],
             private=False,
             push_videos=True,
             license="apache-2.0",
