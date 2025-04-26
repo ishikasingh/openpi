@@ -103,8 +103,11 @@ def main(data_dir: str, *, push_to_hub: bool = True):
                     # Use linear spacing to get indices that match joint_traj length
                     sample_indices = np.linspace(0, num_images-1, num_joints, dtype=int)
                     keypoint['images'] = [keypoint['images'][i] for i in sample_indices]
+                if num_images < num_joints:
+                    sample_indices = np.linspace(0, num_joints-1, num_images, dtype=int)
+                    keypoint['joint_traj'] = [keypoint['joint_traj'][i] for i in sample_indices]
 
-                for idx in range(0, len(keypoint['joint_traj'])-1):
+                for idx in range(0, len(keypoint['joint_traj']) - 1):
                     dataset.add_frame(
                         {
                             "image": keypoint['images'][idx]['color'][..., ::-1],
