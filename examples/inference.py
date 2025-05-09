@@ -9,53 +9,71 @@ from openpi.shared import download
 from openpi.training import config as _config
 from openpi.training import data_loader as _data_loader
 
-config = _config.get_config("pi0_fast_droid")
-checkpoint_dir = download.maybe_download("s3://openpi-assets/checkpoints/pi0_fast_droid")
+import os
+import pickle
+import ipdb
+
+
+
+config = _config.get_config("pi0_fast_libero")
+checkpoint_dir = download.maybe_download("/lustre/fsw/portfolios/nvr/users/ishikas/openpi/checkpoints/pi0_fast_libero/my_experiment/13500")
+
+
+
 
 # Create a trained policy.
 policy = _policy_config.create_trained_policy(config, checkpoint_dir)
 
-# Run inference on a dummy example. This example corresponds to observations produced by the DROID runtime.
-example = droid_policy.make_droid_example()
-result = policy.infer(example)
+tmp_obs_path = f'/lustre/fsw/portfolios/nvr/users/ishikas/ogvla_realworld/data/eval_openpi/'
 
-# Delete the policy to free up memory.
-del policy
+obs_input_path = tmp_obs_path + 'obs_input.pkl'
 
-print("Actions shape:", result["actions"].shape)
+while True:
+    while True:
+        user_input = input("Press c to continue...")
+        if user_input.lower() == 'c':
+            break
 
-import ipdb; ipdb.set_trace()
+    # Pull latest changes from ogvla repo
+    ogvla_repo_path = '/lustre/fsw/portfolios/nvr/users/ishikas/ogvla_realworld'
+    print(f'Pulling latest changes from {ogvla_repo_path}...')
+    try:
+        import subprocess
+        subprocess.run(['git', '-C', ogvla_repo_path, 'pull'], check=True)
+        print('Successfully pulled latest changes')
+    except subprocess.CalledProcessError as e:
+        print(f'Error pulling changes: {e}')
+        print('Continuing with existing code...')
+
+    print('waiting for observation input at...', tmp_obs_path)
+    while not os.path.exists(obs_input_path):
+        continue
+    
+    if os.path.exists(obs_input_path):
+        with open(obs_input_path, 'rb') as f:
+            obs_input = pickle.load(f)
 
 
-config = _config.get_config("pi0_aloha_sim")
+    # Run inference on a dummy example. This example corresponds to observations produced by the DROID runtime.
+    example = {
+        "observation/image": obs_input["color"],
+        "observation/state": obs_input["state"][:7],
+        "prompt": obs_input["task_name"]
+    }
+    result = policy.infer(example)
+    print(obs_input["state"][:7])
+    print(result['actions'])
 
-checkpoint_dir = download.maybe_download("s3://openpi-assets/checkpoints/pi0_aloha_sim")
-key = jax.random.key(0)
+    os.remove(obs_input_path)
+    action_path = tmp_obs_path + 'action'
+    with open(action_path, 'wb') as f:
+        pickle.dump(result['actions'].tolist(), f)
 
-# Create a model from the checkpoint.
-model = config.model.load(_model.restore_params(checkpoint_dir / "params"))
+    try:
+        subprocess.run(['git', '-C', os.path.dirname(action_path), 'add', os.path.basename(action_path)], check=True)
+        subprocess.run(['git', '-C', os.path.dirname(action_path), 'commit', '-m', 'Update action file'], check=True)
+        subprocess.run(['git', '-C', os.path.dirname(action_path), 'push'], check=True)
+        print('Successfully pushed to git repo')
+    except subprocess.CalledProcessError as e:
+        print(f"Error pushing to git repo: {e}")
 
-# We can create fake observations and actions to test the model.
-obs, act = config.model.fake_obs(), config.model.fake_act()
-
-# Sample actions from the model.
-loss = model.compute_loss(key, obs, act)
-print("Loss shape:", loss.shape)
-
-
-# Reduce the batch size to reduce memory usage.
-config = dataclasses.replace(config, batch_size=2)
-
-# Load a single batch of data. This is the same data that will be used during training.
-# NOTE: In order to make this example self-contained, we are skipping the normalization step
-# since it requires the normalization statistics to be generated using `compute_norm_stats`.
-loader = _data_loader.create_data_loader(config, num_batches=1, skip_norm_stats=True)
-obs, act = next(iter(loader))
-
-# Sample actions from the model.
-loss = model.compute_loss(key, obs, act)
-
-# Delete the model to free up memory.
-del model
-
-print("Loss shape:", loss.shape)
